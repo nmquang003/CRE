@@ -9,6 +9,11 @@ import torch.nn as nn
 from sklearn import metrics
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from torch.distributions import MultivariateNormal
 from tqdm import tqdm
 from transformers import set_seed
 
@@ -91,6 +96,9 @@ class EoETrainer(BaseTrainer):
                 )
 
             self.statistic(model, train_dataset, default_data_collator)
+
+            mean, cov, _, _ = self.get_mean_and_cov(model, train_dataset, default_data_collator, -1)
+            self.train_tii(model, mean, cov, num_sample=1000)
 
             cur_test_data = data.filter(cur_labels, 'test')
             history_test_data = data.filter(seen_labels, 'test')
@@ -189,6 +197,72 @@ class EoETrainer(BaseTrainer):
                 progress_bar.set_postfix({"Loss": loss.item()})
 
         progress_bar.close()
+
+    def train_tii(self, model, means, cov, num_sample=1000):
+        # Dữ liệu đầu vào (mỗi mẫu là một vector)
+        all_samples = []
+        all_labels = []
+        epsilon = 1e-6  # Thêm vào các phần tử chéo để làm cho ma trận xác định dương
+        cov_regularized = cov + torch.eye(cov.size(0)) * epsilon
+        cov_regularized = cov_regularized.cuda()
+
+        for j in range(len(means)):  # Task index
+            for k in range(len(means[0])):  # Class index
+                mean = means[j][k].cuda()  # Mean của lớp thứ k trong task thứ j
+
+                # Khởi tạo phân phối Gaussian đa biến
+                mvn = MultivariateNormal(mean, covariance_matrix=cov_regularized)
+
+                # Sample vectors từ phân phối
+                sampled_tensor = mvn.sample((num_sample,))
+                all_samples.append(sampled_tensor)
+                all_labels.append(torch.full((num_sample,), j, dtype=torch.long).cuda())
+
+        # Chuyển đổi danh sách thành tensor để tạo TensorDataset
+        all_samples = torch.cat(all_samples, dim=0)  # (total_samples, feature_dim)
+        all_labels = torch.cat(all_labels, dim=0)  # (total_samples,)
+
+        logger.info("***** Running training tii *****")
+        logger.info(f"  Num examples per each class = {num_sample}")
+        logger.info(f"  Num Epochs = {self.args.num_train_epochs_tii}")
+        logger.info(f"  Train batch size = {self.args.train_batch_size_tii}")
+
+        for task_idx in range(self.args.num_tasks):
+            # Chọn dữ liệu của các task từ 0 đến task_idx
+            task_samples = all_samples[: (task_idx + 1) * num_sample]
+            task_labels = all_labels[: (task_idx + 1) * num_sample]
+            dataset = TensorDataset(task_samples, task_labels)
+            dataloader = DataLoader(dataset, batch_size=self.args.train_batch_size_tii, shuffle=True)
+
+            tii_head = model.tii_head[task_idx]
+            max_steps = len(dataloader) * self.args.num_train_epochs_tii
+            progress_bar = tqdm(range(max_steps))
+
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.AdamW(tii_head.parameters(), lr=0.001)
+
+            for epoch in range(self.args.num_train_epochs_tii):
+                tii_head.train()
+                for inputs, labels in dataloader:
+                    inputs, labels = inputs.cuda(), labels.cuda()
+
+                    # Zero gradients
+                    optimizer.zero_grad()
+
+                    # Forward pass
+                    outputs = tii_head(inputs)  # Tiến hành inference với tii_head
+
+                    # Tính toán loss và backpropagation
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(tii_head.parameters(), self.args.max_grad_norm)
+                    optimizer.step()
+
+                    progress_bar.update(1)
+                    progress_bar.set_postfix({"Loss": loss.item()})
+            progress_bar.close()
+
+
 
     @torch.no_grad()
     def eval(self, model, eval_dataset, data_collator, seen_labels, label2task_id, oracle=False):

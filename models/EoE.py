@@ -50,6 +50,7 @@ class EoE(nn.Module):
         ]
 
         self.classifier = nn.ParameterList()
+        self.tii_head = nn.ParameterList()
 
     def load_expert_model(self, expert_model):
         ckpt = torch.load(expert_model)
@@ -67,7 +68,9 @@ class EoE(nn.Module):
         for param in self.classifier.parameters():
             param.requires_grad = False
         new_classifier = nn.Linear(self.classifier_hidden_size, num_labels, device=self.device)
+        new_tii_head = nn.Linear(self.classifier_hidden_size, self.num_labels, device=self.device)
         self.classifier.append(new_classifier)
+        self.tii_head.append(new_tii_head)
 
         self.feature_extractor.add_adapter(self.num_tasks)
 
@@ -85,9 +88,19 @@ class EoE(nn.Module):
             f"classifier": state_dict
         }, f"{save_dir}/classifier-{idx}.pth")
 
+    def save_tii_head(self, idx, save_dir):
+        state_dict = self.tii_head[idx].state_dict()
+        torch.save({
+            f"tii_head": state_dict
+        }, f"{save_dir}/tii_head-{idx}.pth")
+         
     def load_classifier(self, idx, save_dir):
         ckpt = torch.load(f"{save_dir}/classifier-{idx}.pth")
         self.classifier[idx].load_state_dict(ckpt["classifier"])
+
+    def load_tii_head(self, idx, save_dir):
+        ckpt = torch.load(f"{save_dir}/tii_head-{idx}.pth")
+        self.classifier[idx].load_state_dict(ckpt["tii_head"])
 
     def new_statistic(self, mean, cov, task_mean, task_cov, expert_id=0):
         expert_id = self.shift_expert_id(expert_id)
@@ -141,6 +154,13 @@ class EoE(nn.Module):
         _, indices = torch.min(scores_over_tasks, dim=0) # [n]
 
         return indices, scores_over_tasks, class_indices_over_tasks
+    
+    def get_expert_indices(self, prelogits, task_id=None):
+        if task_id == None:
+            task_id = self.num_tasks
+        logits = self.tii_head[task_id](prelogits) # [n, task_num]
+        scores, indices = torch.max(logits, dim=1)
+        return scores, indices
 
     def forward(self, input_ids, attention_mask=None, labels=None, oracle=False, **kwargs):
 
@@ -150,6 +170,29 @@ class EoE(nn.Module):
 
         if self.training:
             indices = torch.LongTensor([self.num_tasks] * batch_size).to(self.device)
+            # only for training
+            hidden_states = self.feature_extractor(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                indices=indices,
+                **kwargs
+            )
+            logits = self.classifier[self.num_tasks](hidden_states)
+
+            loss = None
+            if self.training:
+                offset_label = labels - self.num_old_labels
+                loss = F.cross_entropy(logits, offset_label)
+
+            logits = logits[:, :self.class_per_task]
+            preds = logits.max(dim=-1)[1] + self.class_per_task * indices
+            indices = indices.tolist() if isinstance(indices, torch.Tensor) else indices
+            return ExpertOutput(
+                loss=loss,
+                preds=preds,
+                hidden_states=hidden_states,
+                indices=indices,
+            )
         else:
             if "return_hidden_states" in kwargs and kwargs["return_hidden_states"]:
                 # input task idx 0-9 -1:bert
@@ -255,29 +298,6 @@ class EoE(nn.Module):
                 expert_task_preds=all_score_over_task,
                 expert_class_preds=all_score_over_class,
             )
-        # only for training
-        hidden_states = self.feature_extractor(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            indices=indices,
-            **kwargs
-        )
-        logits = self.classifier[self.num_tasks](hidden_states)
-
-        loss = None
-        if self.training:
-            offset_label = labels - self.num_old_labels
-            loss = F.cross_entropy(logits, offset_label)
-
-        logits = logits[:, :self.class_per_task]
-        preds = logits.max(dim=-1)[1] + self.class_per_task * indices
-        indices = indices.tolist() if isinstance(indices, torch.Tensor) else indices
-        return ExpertOutput(
-            loss=loss,
-            preds=preds,
-            hidden_states=hidden_states,
-            indices=indices,
-        )
 
 
 @dataclass
