@@ -97,6 +97,7 @@ class EoETrainer(BaseTrainer):
 
             self.statistic(model, train_dataset, default_data_collator)
 
+            # training tii
             mean, cov, _, _ = self.get_mean_and_cov(model, train_dataset, default_data_collator, -1)
             self.train_tii(model, mean, cov, num_sample=1000)
 
