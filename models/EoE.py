@@ -104,15 +104,17 @@ class EoE(nn.Module):
         return expert_id + 1
 
     def get_prompt_indices(self, prelogits, expert_id=0):
+        # prelogits: [n, d]
         expert_id = self.shift_expert_id(expert_id)
-        task_means_over_classes = self.expert_distribution[expert_id]["class_mean"]
-        cov_inv = self.expert_distribution[expert_id]["cov_inv"]
+        task_means_over_classes = self.expert_distribution[expert_id]["class_mean"] # [task_num, num_labels_per_task, d]
+        cov_inv = self.expert_distribution[expert_id]["cov_inv"] # [d, d]
 
-        scores_over_tasks = []
-        class_indices_over_tasks = []
+        scores_over_tasks = [] # [task_num, n]
+        class_indices_over_tasks = [] # [task_num, n]
         # for each task
         for idx, mean_over_classes in enumerate(task_means_over_classes):
-            num_labels, _ = mean_over_classes.shape
+            # mean_over_classes [num_labels, d]
+            num_labels = mean_over_classes.shape[0]
             score_over_classes = []
             # for each label in task
             for c in range(num_labels):
@@ -121,22 +123,22 @@ class EoE(nn.Module):
                 elif self.query_mode == "euclidean":
                     score = torch.cdist(prelogits, mean_over_classes[c].unsqueeze(0)).squeeze(1)
                 elif self.query_mode == "mahalanobis":
-                    score = mahalanobis(prelogits, mean_over_classes[c], cov_inv, norm=2)
+                    score = mahalanobis(prelogits, mean_over_classes[c], cov_inv, norm=2) # [n]
                 elif self.query_mode == "maha_ft":
-                    score = mahalanobis(prelogits[idx], mean_over_classes[c], cov_inv, norm=2)
+                    score = mahalanobis(prelogits[idx], mean_over_classes[c], cov_inv, norm=2) 
                 else:
                     raise NotImplementedError
                 score_over_classes.append(score)
             # [num_labels, n]
             score_over_classes = torch.stack(score_over_classes)
-            score, class_indices = score_over_classes.min(dim=0)
+            score, class_indices = score_over_classes.min(dim=0) # score [n], class_indices [n]
             # min score of labels as task score
             scores_over_tasks.append(score)
             class_indices_over_tasks.append(class_indices + idx * num_labels)
         # [task_num, n]
-        scores_over_tasks = torch.stack(scores_over_tasks, dim=0)
-        class_indices_over_tasks = torch.stack(class_indices_over_tasks, dim=0)
-        _, indices = torch.min(scores_over_tasks, dim=0)
+        scores_over_tasks = torch.stack(scores_over_tasks, dim=0) # [task_num, n]
+        class_indices_over_tasks = torch.stack(class_indices_over_tasks, dim=0) # [task_num, n]
+        _, indices = torch.min(scores_over_tasks, dim=0) # [n]
 
         return indices, scores_over_tasks, class_indices_over_tasks
 
@@ -193,7 +195,7 @@ class EoE(nn.Module):
                 )
                 if "extract_mode" in kwargs:
                     del kwargs["extract_mode"]
-                _, scores_over_tasks, scores_over_classes = self.get_prompt_indices(hidden_states, expert_id=e_id)
+                _, scores_over_tasks, scores_over_classes = self.get_prompt_indices(hidden_states, expert_id=e_id) # scores, class indices
                 scores_over_tasks = scores_over_tasks.transpose(-1, -2)
                 scores_over_classes = scores_over_classes.transpose(-1, -2)
                 if e_id != -1:

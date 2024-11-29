@@ -25,7 +25,7 @@ class EoETrainer(BaseTrainer):
         self.task_idx = 0
         self.cur_seed = 0
 
-    def run(self, data, model, tokenizer, label_order, seed=None):
+    def run(self, data, model, tokenizer, label_order, seed=None, train=True):
         if seed is not None:
             set_seed(seed)
             self.cur_seed = seed
@@ -59,7 +59,7 @@ class EoETrainer(BaseTrainer):
                 expert_model = f"./ckpt/{self.args.dataset_name}_{seed}_{self.args.augment_type}.pth"
                 model.load_expert_model(expert_model)
                 logger.info(f"load first task model from {expert_model}")
-            else:
+            elif train:
                 self.train(
                     model=model,
                     train_dataset=aug_train_dataset,
@@ -67,16 +67,28 @@ class EoETrainer(BaseTrainer):
                 )
 
             os.makedirs(f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}", exist_ok=True)
-            model.save_classifier(
-                idx=self.task_idx,
-                save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
-            )
+            if train:
+                model.save_classifier(
+                    idx=self.task_idx,
+                    save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
+                )
 
-            model.feature_extractor.save_and_load_all_adapters(
-                self.task_idx,
-                save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
-                save=True,
-            )
+                model.feature_extractor.save_and_load_all_adapters(
+                    self.task_idx,
+                    save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
+                    save=True,
+                )
+            else:
+                model.load_classifier(
+                    idx=self.task_idx,
+                    save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
+                )
+
+                model.feature_extractor.save_and_load_all_adapters(
+                    self.task_idx,
+                    save_dir=f"./ckpt/{self.args.dataset_name}-{seed}-{self.args.augment_type}",
+                    save=False,
+                )
 
             self.statistic(model, train_dataset, default_data_collator)
 
