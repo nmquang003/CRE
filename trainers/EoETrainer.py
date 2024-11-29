@@ -266,7 +266,7 @@ class EoETrainer(BaseTrainer):
         progress_bar.close()
 
     @torch.no_grad()
-    def eval(self, model, eval_dataset, data_collator, seen_labels, label2task_id, oracle=False):
+    def eval(self, model, eval_dataset, data_collator, seen_labels, label2task_id, oracle=False, use_tii_head=True):
         eval_dataloader = DataLoader(
             eval_dataset,
             batch_size=self.args.eval_batch_size,
@@ -296,6 +296,7 @@ class EoETrainer(BaseTrainer):
             inputs = {k: v.to(self.args.device) for k, v in inputs.items()}
             if oracle:
                 inputs.update({"oracle": True, "task_idx": self.task_idx})
+            inputs.update({"use_tii_head": use_tii_head})
             outputs = model(**inputs)
 
             hit_pred = outputs.indices
@@ -320,7 +321,7 @@ class EoETrainer(BaseTrainer):
         logger.info("Acc {}".format(acc))
         logger.info("Hit Acc {}".format(hit_acc))
 
-        if not oracle:
+        if not oracle and not use_tii_head:
             expert_task_preds = torch.cat(expert_task_preds, dim=0).tolist()
             expert_class_preds = torch.cat(expert_class_preds, dim=0).tolist()
             save_data = {
