@@ -100,27 +100,30 @@ def main(cfg: DictConfig):
 
         trainer = task_to_trainer[args.trainer_name](args=args)
 
-        exp_result = trainer.run(
-            data=data,
-            model=model,
-            tokenizer=tokenizer,
-            label_order=task_seq,
-            seed=exp_seed
-        )
-        exp_results.append(exp_result)
-    # calculate the average results
-    for k in exp_results[0].keys():
-        avg_exp_results = [0] * args.num_tasks
-        std_exp_results = [0] * args.num_tasks
-        for idx in range(args.num_tasks):
-            c = [e[k][idx] * 100 for e in exp_results]
-            avg_exp_results[idx] = sum(c) / len(exp_results)
-            avg_exp_results[idx] = round(avg_exp_results[idx], 2)
-            std_exp_results[idx] = float(np.std(c))
-        logger.info(f"{k} average : {avg_exp_results}")
-        logger.info(f"{k}  std    : {std_exp_results}")
-    logger.info("Training end !")
-
+        if args.trainer_name == EoETrainer:
+            exp_result = trainer.run(
+                data=data,
+                model=model,
+                tokenizer=tokenizer,
+                label_order=task_seq,
+                seed=exp_seed,
+                train=False
+            )
+            exp_results.append(exp_result)
+            # calculate the average results
+            for k in exp_results[0].keys():
+                avg_exp_results = [0] * args.num_tasks
+                std_exp_results = [0] * args.num_tasks
+                for idx in range(args.num_tasks):
+                    c = [e[k][idx] * 100 for e in exp_results]
+                    avg_exp_results[idx] = sum(c) / len(exp_results)
+                    avg_exp_results[idx] = round(avg_exp_results[idx], 2)
+                    std_exp_results[idx] = float(np.std(c))
+                logger.info(f"{k} average : {avg_exp_results}")
+                logger.info(f"{k}  std    : {std_exp_results}")
+            logger.info("Training end !")
+        else:
+            return
 
 if __name__ == "__main__":
     main()

@@ -179,8 +179,8 @@ class ExpertTrainer:
 
             predicts = predicts.cpu().tolist()
             labels = labels.cpu().tolist()
-            golds.extend(predicts)
-            preds.extend(labels)
+            golds.extend(labels)
+            preds.extend(predicts)
 
             progress_bar.update(1)
         progress_bar.close()
