@@ -97,8 +97,9 @@ class EoETrainer(BaseTrainer):
 
             self.statistic(model, train_dataset, default_data_collator)
 
-            mean, cov, _, _ = self.get_mean_and_cov(model, train_dataset, default_data_collator, -1)
-            self.train_tii(model, mean, cov, num_sample=1000)
+            means = model.expert_distribution[0]['class_mean']
+            cov = model.expert_distribution[0]['accumulate_cov']
+            self.train_tii(model, means, cov, task_idx, num_sample=1000)
 
             cur_test_data = data.filter(cur_labels, 'test')
             history_test_data = data.filter(seen_labels, 'test')
@@ -198,7 +199,9 @@ class EoETrainer(BaseTrainer):
 
         progress_bar.close()
 
-    def train_tii(self, model, means, cov, num_sample=1000):
+    def train_tii(self, model, means, cov, task_idx, num_sample=1000):
+        # print("-----1", means.shape)
+        # print("-----2", cov.shape)
         # Dữ liệu đầu vào (mỗi mẫu là một vector)
         all_samples = []
         all_labels = []
@@ -209,7 +212,8 @@ class EoETrainer(BaseTrainer):
         for j in range(len(means)):  # Task index
             for k in range(len(means[0])):  # Class index
                 mean = means[j][k].cuda()  # Mean của lớp thứ k trong task thứ j
-
+                # print("-----3", mean.shape)
+                # print("-----4", cov_regularized.shape)
                 # Khởi tạo phân phối Gaussian đa biến
                 mvn = MultivariateNormal(mean, covariance_matrix=cov_regularized)
 
@@ -222,47 +226,44 @@ class EoETrainer(BaseTrainer):
         all_samples = torch.cat(all_samples, dim=0)  # (total_samples, feature_dim)
         all_labels = torch.cat(all_labels, dim=0)  # (total_samples,)
 
-        logger.info("***** Running training tii *****")
+        logger.info(f"***** Running training tii[{task_idx}] *****")
         logger.info(f"  Num examples per each class = {num_sample}")
         logger.info(f"  Num Epochs = {self.args.num_train_epochs_tii}")
         logger.info(f"  Train batch size = {self.args.train_batch_size_tii}")
 
-        for task_idx in range(self.args.num_tasks):
-            # Chọn dữ liệu của các task từ 0 đến task_idx
-            task_samples = all_samples[: (task_idx + 1) * num_sample]
-            task_labels = all_labels[: (task_idx + 1) * num_sample]
-            dataset = TensorDataset(task_samples, task_labels)
-            dataloader = DataLoader(dataset, batch_size=self.args.train_batch_size_tii, shuffle=True)
+        # Chọn dữ liệu của các task từ 0 đến task_idx
+        task_samples = all_samples[: (task_idx + 1) * num_sample]
+        task_labels = all_labels[: (task_idx + 1) * num_sample]
+        dataset = TensorDataset(task_samples, task_labels)
+        dataloader = DataLoader(dataset, batch_size=self.args.train_batch_size_tii, shuffle=True)
 
-            tii_head = model.tii_head[task_idx]
-            max_steps = len(dataloader) * self.args.num_train_epochs_tii
-            progress_bar = tqdm(range(max_steps))
+        tii_head = model.tii_head[task_idx]
+        max_steps = len(dataloader) * self.args.num_train_epochs_tii
+        progress_bar = tqdm(range(max_steps))
 
-            criterion = nn.CrossEntropyLoss()
-            optimizer = optim.AdamW(tii_head.parameters(), lr=0.001)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.AdamW(tii_head.parameters(), lr=0.001)
 
-            for epoch in range(self.args.num_train_epochs_tii):
-                tii_head.train()
-                for inputs, labels in dataloader:
-                    inputs, labels = inputs.cuda(), labels.cuda()
+        for epoch in range(self.args.num_train_epochs_tii):
+            tii_head.train()
+            for inputs, labels in dataloader:
+                inputs, labels = inputs.cuda(), labels.cuda()
 
-                    # Zero gradients
-                    optimizer.zero_grad()
+                # Zero gradients
+                optimizer.zero_grad()
 
-                    # Forward pass
-                    outputs = tii_head(inputs)  # Tiến hành inference với tii_head
+                # Forward pass
+                outputs = tii_head(inputs)  # Tiến hành inference với tii_head
 
-                    # Tính toán loss và backpropagation
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    nn.utils.clip_grad_norm_(tii_head.parameters(), self.args.max_grad_norm)
-                    optimizer.step()
+                # Tính toán loss và backpropagation
+                loss = criterion(outputs, labels)
+                loss.backward()
+                nn.utils.clip_grad_norm_(tii_head.parameters(), self.args.max_grad_norm)
+                optimizer.step()
 
-                    progress_bar.update(1)
-                    progress_bar.set_postfix({"Loss": loss.item()})
-            progress_bar.close()
-
-
+                progress_bar.update(1)
+                progress_bar.set_postfix({"Loss": loss.item()})
+        progress_bar.close()
 
     @torch.no_grad()
     def eval(self, model, eval_dataset, data_collator, seen_labels, label2task_id, oracle=False):
