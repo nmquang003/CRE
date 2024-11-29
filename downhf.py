@@ -1,31 +1,7 @@
 import os
-import requests
+from huggingface_hub import hf_hub_download
 import zipfile
 import argparse
-
-def download_file_from_hf(repo_id, path_in_repo, output_dir, token=None):
-    """
-    Tải file từ Hugging Face về vị trí cụ thể.
-    """
-    url = f"https://huggingface.co/{repo_id}/resolve/main/{path_in_repo}"
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-
-    # Tạo đường dẫn file output
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, os.path.basename(path_in_repo))
-
-    print(f"Downloading {path_in_repo} from {repo_id}...")
-    response = requests.get(url, headers=headers, stream=True)
-    if response.status_code == 200:
-        with open(output_file, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print(f"Downloaded file saved to {output_file}")
-    else:
-        print(f"Failed to download file: {response.status_code} - {response.text}")
-        return None
-
-    return output_file
 
 def extract_zip_file(zip_file, extract_to):
     """
@@ -50,11 +26,22 @@ def main():
 
     # Tải file từ Hugging Face
     token = os.getenv('HF_READ')
-    downloaded_file = download_file_from_hf(args.repo, args.path, args.output, token)
+    if not token:
+        print("Hugging Face write token not found in environment variables. Please set HF_WRITE.")
+        return
+
+    downloaded_file = hf_hub_download(
+        repo_id=args.repo,
+        filename=args.path,
+        repo_type="dataset",
+        token=token
+    )
 
     # Giải nén file nếu cần
-    if downloaded_file and args.extract:
-        extract_zip_file(downloaded_file, args.output)
+    extract_zip_file(downloaded_file, args.output)
+    if os.path.exists(downloaded_file):
+        os.remove(downloaded_file)
+        print(f"Temporary ZIP file {downloaded_file} has been deleted.")
 
 if __name__ == "__main__":
     main()

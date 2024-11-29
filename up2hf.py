@@ -1,7 +1,7 @@
 import argparse
 import os
 import zipfile
-from huggingface_hub import login, HfApi
+from huggingface_hub import HfApi
 
 # Hàm để nén các file và thư mục
 def zip_files(input_paths, zip_filename):
@@ -19,38 +19,38 @@ def zip_files(input_paths, zip_filename):
     print(f"Created zip file: {zip_filename}")
 
 # Hàm để upload lên Hugging Face
-def upload_to_hf(zip_filename, target_repo, token):
-    # Tách chuỗi theo dấu "/"
-    repo_parts = target_repo.rsplit("/")
-    repo_id = "/".join(repo_parts[:2])
-    target_path = "/".join(repo_parts[2:])
+def upload_to_hf(zip_filename, repo, path, message, token):
     api = HfApi()
     # Upload the file
     api.upload_file(
         path_or_fileobj=zip_filename,
-        path_in_repo=target_path,
-        repo_id=repo_id,
+        path_in_repo=path,
+        repo_id=repo,
+        commit_message=message,
+        token=token,
         repo_type="dataset"  # Change to "model" or "space" depending on your repo type
     )
-    print(f"All inputs uploaded successfully to {target_repo}.")
+    print(f"All inputs uploaded successfully to {repo}/{path}.")
 
 # Hàm chính để xử lý các tham số đầu vào và gọi các hàm trên
 def main():
     # Đọc các tham số đầu vào
     parser = argparse.ArgumentParser(description="Zip and upload files to Hugging Face")
     parser.add_argument('--input', nargs='+', required=True, help="List of files and folders to upload")
-    parser.add_argument('--target', required=True, help="Target Hugging Face repo path (user/repo/target_path)")
+    parser.add_argument('--repo', required=True, help="Target Hugging Face repo (user/repo)")
+    parser.add_argument('--path', required=True, help="Target Hugging Face path in repo (path/to/file)")
+    parser.add_argument('--message', required=False, help="commit message")
 
     args = parser.parse_args()
 
     # Lấy token từ biến môi trường
-    token = os.getenv('HF_TOKEN')
+    token = os.getenv('HF_WRITE')
     if not token:
-        print("Hugging Face token not found in environment variables. Please set HF_TOKEN.")
+        print("Hugging Face write token not found in environment variables. Please set HF_WRITE.")
         return
 
     # Tạo tệp zip
-    output_dir = os.path.expanduser("~/tmp")
+    output_dir = os.path.expanduser("/content/tmp")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -59,8 +59,14 @@ def main():
 
     zip_files(args.input, zip_filename)
 
+    if args.message == None:
+        args.message = f"Upload {', '.join(args.input)} to {args.repo}/{args.path}"
     # Upload lên Hugging Face
-    upload_to_hf(zip_filename, args.target, token)
+    upload_to_hf(zip_filename, args.repo, args.path, args.message, token)
+    # Xóa tệp ZIP sau khi upload
+    if os.path.exists(zip_filename):
+        os.remove(zip_filename)
+        print(f"Temporary ZIP file {zip_filename} has been deleted.")
 
 if __name__ == "__main__":
     main()
