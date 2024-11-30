@@ -159,6 +159,7 @@ class EoE(nn.Module):
         if task_idx == None:
             task_idx = self.num_tasks
         logits = self.tii_head[task_idx](prelogits) # [n, class_num]
+        print_blu(task_idx)
         print_blu(logits.shape)
         scores, indices = torch.max(logits, dim=1)
         return scores, indices // 4

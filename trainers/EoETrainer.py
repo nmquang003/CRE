@@ -97,9 +97,9 @@ class EoETrainer(BaseTrainer):
 
             self.statistic(model, train_dataset, default_data_collator)
 
-            means = model.expert_distribution[0]['class_mean']
-            cov = model.expert_distribution[0]['accumulate_cov']
-            self.train_tii(model, means, cov, task_idx, num_sample=1000)
+            # means = model.expert_distribution[0]['class_mean']
+            # cov = model.expert_distribution[0]['accumulate_cov']
+            # self.train_tii(model, means, cov, task_idx, num_sample=1000)
 
             cur_test_data = data.filter(cur_labels, 'test')
             history_test_data = data.filter(seen_labels, 'test')
@@ -114,6 +114,7 @@ class EoETrainer(BaseTrainer):
                 seen_labels=seen_labels,
                 label2task_id=copy.deepcopy(data.label2task_id),
                 oracle=True,
+                use_tii_head=False,
             )
 
             total_acc, total_hit = self.eval(
@@ -122,6 +123,7 @@ class EoETrainer(BaseTrainer):
                 data_collator=default_data_collator,
                 seen_labels=seen_labels,
                 label2task_id=copy.deepcopy(data.label2task_id),
+                use_tii_head=False,
             )
 
             all_cur_acc.append(cur_acc)
