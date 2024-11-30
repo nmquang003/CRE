@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from models import PeftFeatureExtractor
 from utils import mahalanobis
-
+from utils.ColoredPrint import print_red, print_blu, print_gre, print_yel
 
 class EoE(nn.Module):
     def __init__(self, config):
@@ -158,7 +158,8 @@ class EoE(nn.Module):
     def get_expert_indices(self, prelogits, task_idx=None):
         if task_idx == None:
             task_idx = self.num_tasks
-        logits = self.tii_head[task_idx](prelogits) # [n, task_num]
+        logits = self.tii_head[task_idx](prelogits) # [n, class_num]
+        print_blu(logits.shape)
         scores, indices = torch.max(logits, dim=1)
         return scores, indices // 4
 
@@ -225,7 +226,7 @@ class EoE(nn.Module):
                 if "extract_mode" in kwargs:
                     del kwargs["extract_mode"]
                     
-                indices = self.get_expert_indices(hidden_states, self.num_tasks)
+                _, indices = self.get_expert_indices(hidden_states, self.num_tasks)
 
                 hidden_states = self.feature_extractor(
                     input_ids=input_ids,
@@ -233,11 +234,16 @@ class EoE(nn.Module):
                     use_origin=False,
                     **kwargs
                 )
-
-                logits = self.classifier[self.num_tasks](hidden_states)
+                logits = []
+                print_red(indices)
+                for indice, hidden_state in zip(indices, hidden_states):
+                    logits.append(self.classifier[indice](hidden_state))
+                
+                logits = torch.stack(logits)
                 preds = logits.max(dim=-1)[1] + self.class_per_task * indices
-                expert_task_preds=None
-                expert_class_preds=None
+                indices = indices.tolist() if isinstance(indices, torch.Tensor) else indices
+                all_score_over_task=None
+                all_score_over_class=None
             else:
                 all_score_over_task = []
                 all_score_over_class = []
