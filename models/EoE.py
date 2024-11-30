@@ -68,7 +68,7 @@ class EoE(nn.Module):
         for param in self.classifier.parameters():
             param.requires_grad = False
         new_classifier = nn.Linear(self.classifier_hidden_size, num_labels, device=self.device)
-        new_tii_head = nn.Linear(self.classifier_hidden_size, self.num_labels, device=self.device)
+        new_tii_head = nn.Linear(self.classifier_hidden_size, self.num_old_labels + self.class_per_task, device=self.device)
         self.classifier.append(new_classifier)
         self.tii_head.append(new_tii_head)
 
@@ -158,9 +158,11 @@ class EoE(nn.Module):
     def get_expert_indices(self, prelogits, task_idx=None):
         if task_idx == None:
             task_idx = self.num_tasks
+        self.tii_head[task_idx].eval()
         logits = self.tii_head[task_idx](prelogits) # [n, class_num]
         print_blu(task_idx)
         print_blu(logits.shape)
+        print_blu(logits[:2])
         scores, indices = torch.max(logits, dim=1)
         return scores, indices // 4
 

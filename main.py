@@ -106,7 +106,8 @@ def main(cfg: DictConfig):
             tokenizer=tokenizer,
             label_order=task_seq,
             seed=exp_seed,
-            train=True
+            train=False,
+            use_tii_head=True,
         )
         exp_results.append(exp_result)
         # calculate the average results

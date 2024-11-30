@@ -4,6 +4,7 @@ import os
 import pickle
 
 import hydra
+from tensorflow import truediv
 import torch
 import torch.nn as nn
 from sklearn import metrics
@@ -20,6 +21,7 @@ from transformers import set_seed
 from data import BaseDataset
 from trainers import BaseTrainer
 from utils import CustomCollatorWithPadding, relation_data_augmentation
+from utils.ColoredPrint import print_red, print_blu, print_gre, print_yel
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class EoETrainer(BaseTrainer):
         self.task_idx = 0
         self.cur_seed = 0
 
-    def run(self, data, model, tokenizer, label_order, seed=None, train=True):
+    def run(self, data, model, tokenizer, label_order, seed=None, train=True, use_tii_head=True):
         if seed is not None:
             set_seed(seed)
             self.cur_seed = seed
@@ -97,9 +99,10 @@ class EoETrainer(BaseTrainer):
 
             self.statistic(model, train_dataset, default_data_collator)
 
-            # means = model.expert_distribution[0]['class_mean']
-            # cov = model.expert_distribution[0]['accumulate_cov']
-            # self.train_tii(model, means, cov, task_idx, num_sample=1000)
+            if use_tii_head:
+              means = model.expert_distribution[0]['class_mean']
+              cov = model.expert_distribution[0]['accumulate_cov']
+              self.train_tii(model, means, cov, task_idx, num_sample=1000)
 
             cur_test_data = data.filter(cur_labels, 'test')
             history_test_data = data.filter(seen_labels, 'test')
@@ -114,7 +117,7 @@ class EoETrainer(BaseTrainer):
                 seen_labels=seen_labels,
                 label2task_id=copy.deepcopy(data.label2task_id),
                 oracle=True,
-                use_tii_head=False,
+                use_tii_head=use_tii_head,
             )
 
             total_acc, total_hit = self.eval(
@@ -123,7 +126,7 @@ class EoETrainer(BaseTrainer):
                 data_collator=default_data_collator,
                 seen_labels=seen_labels,
                 label2task_id=copy.deepcopy(data.label2task_id),
-                use_tii_head=False,
+                use_tii_head=use_tii_head,
             )
 
             all_cur_acc.append(cur_acc)
@@ -222,8 +225,8 @@ class EoETrainer(BaseTrainer):
                 # Sample vectors từ phân phối
                 sampled_tensor = mvn.sample((num_sample,))
                 all_samples.append(sampled_tensor)
-                all_labels.append(torch.full((num_sample,), j, dtype=torch.long).cuda())
-
+                all_labels.append(torch.full((num_sample,), j*4+k, dtype=torch.long).cuda())
+                print_gre(j*4+k)
         # Chuyển đổi danh sách thành tensor để tạo TensorDataset
         all_samples = torch.cat(all_samples, dim=0)  # (total_samples, feature_dim)
         all_labels = torch.cat(all_labels, dim=0)  # (total_samples,)
@@ -317,7 +320,7 @@ class EoETrainer(BaseTrainer):
             progress_bar.update(1)
         progress_bar.close()
 
-        logger.info("\n" + metrics.classification_report(golds, preds))
+        logger.info("\n" + metrics.classification_report(golds, preds, zero_division=0))
         acc = metrics.accuracy_score(golds, preds)
         hit_acc = metrics.accuracy_score(gold_indices, pred_indices)
         logger.info("Acc {}".format(acc))
