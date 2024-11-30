@@ -215,13 +215,16 @@ class EoE(nn.Module):
                     del kwargs["extract_mode"]
                 return hidden_states
             if "use_tii_head" in kwargs and kwargs["use_tii_head"]:
+                kwargs.update({"extract_mode": "entity"})
                 hidden_states = self.feature_extractor(
                     input_ids=kwargs["input_ids_without_marker"],
                     indices=None,
                     use_origin=True,
                     **kwargs
                 )
-
+                if "extract_mode" in kwargs:
+                    del kwargs["extract_mode"]
+                    
                 indices = self.get_expert_indices(hidden_states, self.num_tasks)
 
                 hidden_states = self.feature_extractor(
