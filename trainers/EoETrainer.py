@@ -4,7 +4,6 @@ import os
 import pickle
 
 import hydra
-from tensorflow import truediv
 import torch
 import torch.nn as nn
 from sklearn import metrics
@@ -101,8 +100,8 @@ class EoETrainer(BaseTrainer):
 
             if use_tii_head:
               means = model.expert_distribution[0]['class_mean']
-              cov = model.expert_distribution[0]['accumulate_cov']
-              self.train_tii(model, means, cov, task_idx, num_sample=1000)
+              covs = model.expert_distribution[0]['class_cov']
+              self.train_tii(model, means, covs, task_idx, num_sample=1000)
 
             cur_test_data = data.filter(cur_labels, 'test')
             history_test_data = data.filter(seen_labels, 'test')
@@ -204,17 +203,18 @@ class EoETrainer(BaseTrainer):
 
         progress_bar.close()
 
-    def train_tii(self, model, means, cov, task_idx, num_sample=1000):
+    def train_tii(self, model, means, covs, task_idx, num_sample=1000):
         # print("-----1", means.shape)
         # print("-----2", cov.shape)
         # Dữ liệu đầu vào (mỗi mẫu là một vector)
         all_samples = []
         all_labels = []
         epsilon = 1e-6  # Thêm vào các phần tử chéo để làm cho ma trận xác định dương
-        cov_regularized = cov + torch.eye(cov.size(0)) * epsilon
-        cov_regularized = cov_regularized.cuda()
 
         for j in range(len(means)):  # Task index
+            cov = covs[j]
+            cov_regularized = cov + torch.eye(cov.size(0)) * epsilon
+            cov_regularized = cov_regularized.cuda()
             for k in range(len(means[0])):  # Class index
                 mean = means[j][k].cuda()  # Mean của lớp thứ k trong task thứ j
                 # print("-----3", mean.shape)
