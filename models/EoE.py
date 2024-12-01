@@ -232,6 +232,9 @@ class EoE(nn.Module):
                     del kwargs["extract_mode"]
                     
                 _, indices = self.get_expert_indices(hidden_states, self.num_tasks)
+                indices2, _, _ = self.get_prompt_indices(hidden_states, expert_id=-1)
+                print_red(indices)
+                print_red(indices2)
 
                 hidden_states = self.feature_extractor(
                     input_ids=input_ids,
@@ -240,7 +243,6 @@ class EoE(nn.Module):
                     **kwargs
                 )
                 logits = []
-                print_red(indices)
                 for indice, hidden_state in zip(indices, hidden_states):
                     logits.append(self.classifier[indice](hidden_state)[:self.class_per_task])
                 
