@@ -109,6 +109,7 @@ class EoE(nn.Module):
         else:
             length = self.num_tasks - expert_id + 2
         self.expert_distribution[expert_id]["class_mean"].append(mean.cuda())
+        self.expert_distribution[expert_id]["class_cov"].append(cov.cuda())
         self.expert_distribution[expert_id]["accumulate_cov"] += cov
         avg_cov = self.expert_distribution[expert_id]["accumulate_cov"].cuda() / length
         self.expert_distribution[expert_id]["cov_inv"] = torch.linalg.pinv(avg_cov, hermitian=True)
