@@ -44,6 +44,7 @@ class EoE(nn.Module):
         self.expert_distribution = [
             {
                 "class_mean": [],
+                "class_cov": [],
                 "accumulate_cov": torch.zeros(self.query_size, self.query_size),
                 "cov_inv": torch.ones(self.query_size, self.query_size),
             }
@@ -76,8 +77,8 @@ class EoE(nn.Module):
 
         # calculate distribution for each class with all expert model
         self.expert_distribution.append({
-            "class_mean": [torch.zeros(self.class_per_task, self.query_size).to(self.device) for _ in
-                           range(self.num_tasks)],
+            "class_mean": [torch.zeros(self.class_per_task, self.query_size).to(self.device) for _ in range(self.num_tasks)],
+            "class_cov": [torch.zeros(self.query_size, self.query_size).to(self.device) for _ in range(self.num_tasks)],
             "accumulate_cov": torch.zeros(self.query_size, self.query_size),
             "cov_inv": torch.ones(self.query_size, self.query_size),
         })
@@ -109,7 +110,7 @@ class EoE(nn.Module):
         else:
             length = self.num_tasks - expert_id + 2
         self.expert_distribution[expert_id]["class_mean"].append(mean.cuda())
-        self.expert_distribution[expert_id]["class_cov"].append(cov.cuda())
+        self.expert_distribution[expert_id]["class_cov"].append(cov)
         self.expert_distribution[expert_id]["accumulate_cov"] += cov
         avg_cov = self.expert_distribution[expert_id]["accumulate_cov"].cuda() / length
         self.expert_distribution[expert_id]["cov_inv"] = torch.linalg.pinv(avg_cov, hermitian=True)
@@ -165,7 +166,7 @@ class EoE(nn.Module):
         print_blu(logits.shape)
         print_blu(logits[:2])
         scores, indices = torch.max(logits, dim=1)
-        return scores, indices // 4
+        return scores, indices
 
     def forward(self, input_ids, attention_mask=None, labels=None, oracle=False, **kwargs):
         batch_size, _ = input_ids.shape
@@ -241,7 +242,7 @@ class EoE(nn.Module):
                 logits = []
                 print_red(indices)
                 for indice, hidden_state in zip(indices, hidden_states):
-                    logits.append(self.classifier[indice](hidden_state))
+                    logits.append(self.classifier[indice](hidden_state)[:self.class_per_task])
                 
                 logits = torch.stack(logits)
                 preds = logits.max(dim=-1)[1] + self.class_per_task * indices

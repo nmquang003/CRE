@@ -204,12 +204,9 @@ class EoETrainer(BaseTrainer):
         progress_bar.close()
 
     def train_tii(self, model, means, covs, task_idx, num_sample=1000):
-        # print("-----1", means.shape)
-        # print("-----2", cov.shape)
-        # Dữ liệu đầu vào (mỗi mẫu là một vector)
         all_samples = []
         all_labels = []
-        epsilon = 1e-6  # Thêm vào các phần tử chéo để làm cho ma trận xác định dương
+        epsilon = 1e-3  # Thêm vào các phần tử chéo để làm cho ma trận xác định dương
 
         for j in range(len(means)):  # Task index
             cov = covs[j]
@@ -217,8 +214,6 @@ class EoETrainer(BaseTrainer):
             cov_regularized = cov_regularized.cuda()
             for k in range(len(means[0])):  # Class index
                 mean = means[j][k].cuda()  # Mean của lớp thứ k trong task thứ j
-                # print("-----3", mean.shape)
-                # print("-----4", cov_regularized.shape)
                 # Khởi tạo phân phối Gaussian đa biến
                 mvn = MultivariateNormal(mean, covariance_matrix=cov_regularized)
 
@@ -226,7 +221,6 @@ class EoETrainer(BaseTrainer):
                 sampled_tensor = mvn.sample((num_sample,))
                 all_samples.append(sampled_tensor)
                 all_labels.append(torch.full((num_sample,), j*4+k, dtype=torch.long).cuda())
-                print_gre(j*4+k)
         # Chuyển đổi danh sách thành tensor để tạo TensorDataset
         all_samples = torch.cat(all_samples, dim=0)  # (total_samples, feature_dim)
         all_labels = torch.cat(all_labels, dim=0)  # (total_samples,)
