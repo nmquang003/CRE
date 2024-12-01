@@ -2,7 +2,7 @@ trainer_name: "ExpertTrainer"
 model_name: "ExpertModel"
 save_model_dir: "./ckpt/"
 # data augmentation (all, no_rel, reverse, none)
-augment_type: "all"
+augment_type: "none"
 
 seed: 2021
 num_train_epochs: 10

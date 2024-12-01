@@ -4,7 +4,7 @@ frozen: true
 query_mode: "mahalanobis"
 seed: 2021
 peft_type: "lora"
-augment_type: "all"
+augment_type: "none"
 max_expert: -1
 
 default_expert: "task"
