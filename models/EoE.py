@@ -166,7 +166,7 @@ class EoE(nn.Module):
         print_blu(logits.shape)
         print_blu(logits[:2])
         scores, indices = torch.max(logits, dim=1)
-        return scores, indices
+        return scores, indices // 4
 
     def forward(self, input_ids, attention_mask=None, labels=None, oracle=False, **kwargs):
         batch_size, _ = input_ids.shape
